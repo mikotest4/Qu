@@ -63,10 +63,10 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
 
-    base      = os.path.splitext(vid_filename)[0]
-    output    = f"{base}_soft.mkv"
-    out_path  = os.path.join(Config.DOWNLOAD_DIR, output)
-    sub_ext   = os.path.splitext(sub_filename)[1].lstrip('.')
+    base     = os.path.splitext(vid_filename)[0]
+    output   = f"{base}_soft.mkv"
+    out_path = os.path.join(Config.DOWNLOAD_DIR, output)
+    sub_ext  = os.path.splitext(sub_filename)[1].lstrip('.')
 
     command = [
         'ffmpeg', '-hide_banner',
@@ -82,7 +82,7 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
     proc = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
     )
     await asyncio.wait([
         asyncio.create_task(read_stderr(start, msg, proc)),
@@ -111,7 +111,7 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
 async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     start = time.time()
 
-    # use chat.id because msg.from_user is None on bot‑sent messages
+    # use chat.id since msg.from_user is None on bot‐sent messages
     user_id = msg.chat.id
     cfg     = SettingsManager.get(user_id)
 
@@ -126,8 +126,10 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
     vf = [f"subtitles={sub_path}"]
-    if res != 'original': vf.append(f"scale={res}")
-    if fps != 'original': vf.append(f"fps={fps}")
+    if res != 'original':
+        vf.append(f"scale={res}")
+    if fps != 'original':
+        vf.append(f"fps={fps}")
     vf_arg = ",".join(vf)
 
     base     = os.path.splitext(vid_filename)[0]
@@ -150,7 +152,25 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     proc = await asyncio.create_subprocess_exec(
         *command,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
     )
     await asyncio.wait([
-        asyncio.create_task(read_stderr(start
+        asyncio.create_task(read_stderr(start, msg, proc)),
+        asyncio.create_task(proc.wait())
+    ])
+
+    if proc.returncode == 0:
+        await msg.edit(
+            f"✅ Hard‑Mux completed in {round(time.time() - start)}s",
+            parse_mode=ParseMode.HTML
+        )
+        await asyncio.sleep(2)
+        return output
+    else:
+        err = await proc.stderr.read()
+        await msg.edit(
+            "❌ Error during hard‑muxing!\n\n"
+            f"<pre>{err.decode(errors='ignore')}</pre>",
+            parse_mode=ParseMode.HTML
+        )
+        return False
