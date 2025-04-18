@@ -1,0 +1,18 @@
+# Use the official Python 3.9 slim image
+FROM python:3.9-slim
+
+# Update apt-get and install ffmpeg (and optionally python3-pip if needed)
+RUN apt-get update && apt-get install -y ffmpeg
+
+# Set the working directory
+WORKDIR /app
+
+# Copy all files from your local folder into the container
+COPY . /app
+
+# Install Python dependencies
+# (pip is usually included in the official Python image, so pip3 is available)
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Start your bot
+CMD ["python3", "muxbot.py"]
