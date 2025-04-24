@@ -34,15 +34,11 @@ async def softmux(client, message):
             text += 'Send a Subtitle File!'
         return await client.send_message(chat_id, text)
 
-    # this message will immediately be edited by softmux_vid() to show job_id & progress
     sent_msg = await client.send_message(chat_id, '🔄 Starting soft-mux…')
-
-    # kicks off ffmpeg, registers the job and edits sent_msg with the <job_id>
-    result = await softmux_vid(vid, sub, sent_msg)
+    result   = await softmux_vid(vid, sub, sent_msg)
     if not result:
-        return  # softmux_vid already edited with an error
+        return
 
-    # once done, rename and upload
     final = db.get_filename(chat_id)
     os.rename(
         os.path.join(Config.DOWNLOAD_DIR, result),
@@ -63,12 +59,9 @@ async def softmux(client, message):
         print(e)
         await client.send_message(chat_id, '❌ Upload failed. Check logs.')
 
-    # cleanup
     for fn in (vid, sub, final):
-        try:
-            os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
-        except:
-            pass
+        try: os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
+        except: pass
     db.erase(chat_id)
 
 
@@ -92,7 +85,7 @@ async def hardmux(client, message):
     sent_msg = await client.send_message(chat_id, '🔄 Starting hard-mux…')
     result   = await hardmux_vid(vid, sub, sent_msg)
     if not result:
-        return  # hardmux_vid already edited with an error
+        return
 
     final = db.get_filename(chat_id)
     os.rename(
@@ -114,12 +107,9 @@ async def hardmux(client, message):
         print(e)
         await client.send_message(chat_id, '❌ Upload failed. Check logs.')
 
-    # cleanup
     for fn in (vid, sub, final):
-        try:
-            os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
-        except:
-            pass
+        try: os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
+        except: pass
     db.erase(chat_id)
 
 
@@ -130,7 +120,6 @@ async def hardmux(client, message):
 async def cancel_job(client, message):
     chat_id = message.from_user.id
 
-    # expect exactly "/cancel <job_id>"
     if len(message.command) != 2:
         return await client.send_message(chat_id, 'Usage: /cancel <job_id>')
 
@@ -139,12 +128,9 @@ async def cancel_job(client, message):
     if not entry:
         return await client.send_message(chat_id, f'No active job `{job_id}` found.')
 
-    # kill the ffmpeg process and cancel our progress‐reader/waiter tasks
     entry['proc'].kill()
     for t in entry['tasks']:
         t.cancel()
 
-    # remove from registry
     running_jobs.pop(job_id, None)
-
     await client.send_message(chat_id, f'🛑 Job `{job_id}` has been cancelled.')
