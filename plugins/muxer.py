@@ -168,9 +168,3 @@ async def queue_worker(client: Client):
         job_queue.task_done()
 
 
-# ------------------------------------------------------------------------------
-# start the queue worker when the bot connects
-# ------------------------------------------------------------------------------
-@Client.on_connect()
-async def on_connect(client, _):
-    client.loop.create_task(queue_worker(client))
