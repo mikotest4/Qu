@@ -12,10 +12,10 @@ db = Db()
 # only allow configured users
 # ------------------------------------------------------------------------------
 async def _check_user(filt, client, message):
-    chat_id = str(message.from_user.id)
-    return chat_id in Config.ALLOWED_USERS
+    return str(message.from_user.id) in Config.ALLOWED_USERS
 
 check_user = filters.create(_check_user)
+
 
 # ------------------------------------------------------------------------------
 # /softmux handler
@@ -23,59 +23,54 @@ check_user = filters.create(_check_user)
 @Client.on_message(filters.command('softmux') & check_user & filters.private)
 async def softmux(client, message):
     chat_id = message.from_user.id
-    og_vid_filename = db.get_vid_filename(chat_id)
-    og_sub_filename = db.get_sub_filename(chat_id)
+    vid     = db.get_vid_filename(chat_id)
+    sub     = db.get_sub_filename(chat_id)
 
-    if not og_vid_filename or not og_sub_filename:
+    if not vid or not sub:
         text = ''
-        if not og_vid_filename:
+        if not vid:
             text += 'First send a Video File\n'
-        if not og_sub_filename:
+        if not sub:
             text += 'Send a Subtitle File!'
         return await client.send_message(chat_id, text)
 
-    sent_msg = await client.send_message(
-        chat_id,
-        '🔄 Your file is being soft-subbed…'
-    )
+    # this message will immediately be edited by softmux_vid() to show job_id & progress
+    sent_msg = await client.send_message(chat_id, '🔄 Starting soft-mux…')
 
-    # this now returns immediately with a job_id posted to sent_msg
-    softmux_filename = await softmux_vid(og_vid_filename, og_sub_filename, sent_msg)
-    if not softmux_filename:
-        return  # error already shown in softmux_vid
+    # kicks off ffmpeg, registers the job and edits sent_msg with the <job_id>
+    result = await softmux_vid(vid, sub, sent_msg)
+    if not result:
+        return  # softmux_vid already edited with an error
 
-    final_filename = db.get_filename(chat_id)
+    # once done, rename and upload
+    final = db.get_filename(chat_id)
     os.rename(
-        os.path.join(Config.DOWNLOAD_DIR, softmux_filename),
-        os.path.join(Config.DOWNLOAD_DIR, final_filename)
+        os.path.join(Config.DOWNLOAD_DIR, result),
+        os.path.join(Config.DOWNLOAD_DIR, final)
     )
 
-    start_time = time.time()
+    t0 = time.time()
     try:
         await client.send_document(
             chat_id,
-            document=os.path.join(Config.DOWNLOAD_DIR, final_filename),
-            caption=final_filename,
+            document=os.path.join(Config.DOWNLOAD_DIR, final),
+            caption=final,
             progress=progress_bar,
-            progress_args=('Uploading your file…', sent_msg, start_time)
+            progress_args=('Uploading your file…', sent_msg, t0)
         )
-        await sent_msg.edit(
-            f"✅ File uploaded!\nTotal time: {round(time.time() - start_time)}s"
-        )
+        await sent_msg.edit(f'✅ File uploaded!\nTotal time: {round(time.time() - t0)}s')
     except Exception as e:
         print(e)
-        await client.send_message(
-            chat_id,
-            '❌ An error occurred during upload. Check logs for details.'
-        )
+        await client.send_message(chat_id, '❌ Upload failed. Check logs.')
 
     # cleanup
-    for fn in (og_vid_filename, og_sub_filename, final_filename):
+    for fn in (vid, sub, final):
         try:
             os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
         except:
             pass
     db.erase(chat_id)
+
 
 # ------------------------------------------------------------------------------
 # /hardmux handler
@@ -83,58 +78,50 @@ async def softmux(client, message):
 @Client.on_message(filters.command('hardmux') & check_user & filters.private)
 async def hardmux(client, message):
     chat_id = message.from_user.id
-    og_vid_filename = db.get_vid_filename(chat_id)
-    og_sub_filename = db.get_sub_filename(chat_id)
+    vid     = db.get_vid_filename(chat_id)
+    sub     = db.get_sub_filename(chat_id)
 
-    if not og_vid_filename or not og_sub_filename:
+    if not vid or not sub:
         text = ''
-        if not og_vid_filename:
+        if not vid:
             text += 'First send a Video File\n'
-        if not og_sub_filename:
+        if not sub:
             text += 'Send a Subtitle File!'
         return await client.send_message(chat_id, text)
 
-    sent_msg = await client.send_message(
-        chat_id,
-        '🔄 Your file is being hard-subbed…'
-    )
+    sent_msg = await client.send_message(chat_id, '🔄 Starting hard-mux…')
+    result   = await hardmux_vid(vid, sub, sent_msg)
+    if not result:
+        return  # hardmux_vid already edited with an error
 
-    hardmux_filename = await hardmux_vid(og_vid_filename, og_sub_filename, sent_msg)
-    if not hardmux_filename:
-        return  # error already shown in hardmux_vid
-
-    final_filename = db.get_filename(chat_id)
+    final = db.get_filename(chat_id)
     os.rename(
-        os.path.join(Config.DOWNLOAD_DIR, hardmux_filename),
-        os.path.join(Config.DOWNLOAD_DIR, final_filename)
+        os.path.join(Config.DOWNLOAD_DIR, result),
+        os.path.join(Config.DOWNLOAD_DIR, final)
     )
 
-    start_time = time.time()
+    t0 = time.time()
     try:
         await client.send_video(
             chat_id,
-            video=os.path.join(Config.DOWNLOAD_DIR, final_filename),
-            caption=final_filename,
+            video=os.path.join(Config.DOWNLOAD_DIR, final),
+            caption=final,
             progress=progress_bar,
-            progress_args=('Uploading your file…', sent_msg, start_time)
+            progress_args=('Uploading your file…', sent_msg, t0)
         )
-        await sent_msg.edit(
-            f"✅ File uploaded!\nTotal time: {round(time.time() - start_time)}s"
-        )
+        await sent_msg.edit(f'✅ File uploaded!\nTotal time: {round(time.time() - t0)}s')
     except Exception as e:
         print(e)
-        await client.send_message(
-            chat_id,
-            '❌ An error occurred during upload. Check logs for details.'
-        )
+        await client.send_message(chat_id, '❌ Upload failed. Check logs.')
 
     # cleanup
-    for fn in (og_vid_filename, og_sub_filename, final_filename):
+    for fn in (vid, sub, final):
         try:
             os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
         except:
             pass
     db.erase(chat_id)
+
 
 # ------------------------------------------------------------------------------
 # /cancel handler
@@ -143,24 +130,21 @@ async def hardmux(client, message):
 async def cancel_job(client, message):
     chat_id = message.from_user.id
 
-    # must be exactly "/cancel <job_id>"
+    # expect exactly "/cancel <job_id>"
     if len(message.command) != 2:
-        return await client.send_message(chat_id, "Usage: /cancel <job_id>")
+        return await client.send_message(chat_id, 'Usage: /cancel <job_id>')
 
     job_id = message.command[1]
-    entry = running_jobs.get(job_id)
+    entry  = running_jobs.get(job_id)
     if not entry:
-        return await client.send_message(chat_id, f"No active job with ID `{job_id}`")
+        return await client.send_message(chat_id, f'No active job `{job_id}` found.')
 
-    proc  = entry['proc']
-    tasks = entry['tasks']
-
-    # kill the ffmpeg process and cancel its asyncio tasks
-    proc.kill()
-    for t in tasks:
+    # kill the ffmpeg process and cancel our progress‐reader/waiter tasks
+    entry['proc'].kill()
+    for t in entry['tasks']:
         t.cancel()
 
-    # remove from registry so it can’t be canceled again
+    # remove from registry
     running_jobs.pop(job_id, None)
 
-    await client.send_message(chat_id, f"🛑 Job `{job_id}` has been cancelled.")
+    await client.send_message(chat_id, f'🛑 Job `{job_id}` has been cancelled.')
