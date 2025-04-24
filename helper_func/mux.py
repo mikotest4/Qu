@@ -1,13 +1,18 @@
-# helper_func/mux.py
-
-from config import Config
 import os
 import time
 import re
+import uuid
 import asyncio
 
+from config import Config
 from helper_func.settings_manager import SettingsManager
 from pyrogram.enums import ParseMode
+
+# ------------------------------------------------------------------------------
+# track all live ffmpeg jobs here
+# ------------------------------------------------------------------------------
+# job_id → {'proc':Process, 'tasks':[reader, waiter], 'type':'soft'|'hard'}
+running_jobs: dict[str, dict] = {}
 
 # ------------------------------------------------------------------------------
 # Progress parsing
@@ -17,7 +22,7 @@ progress_pattern = re.compile(
 )
 
 def parse_progress(line: str):
-    items = { k: v for k, v in progress_pattern.findall(line) }
+    items = {k: v for k, v in progress_pattern.findall(line)}
     return items or None
 
 async def readlines(stream):
@@ -56,19 +61,19 @@ async def read_stderr(start: float, msg, process):
                 pass
 
 # ------------------------------------------------------------------------------
-# Soft‑Mux (stream‑copy into MKV)
+# Soft-Mux (stream-copy into MKV)
 # ------------------------------------------------------------------------------
 async def softmux_vid(vid_filename: str, sub_filename: str, msg):
     start = time.time()
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
-
     base     = os.path.splitext(vid_filename)[0]
     output   = f"{base}_soft.mkv"
     out_path = os.path.join(Config.DOWNLOAD_DIR, output)
     sub_ext  = os.path.splitext(sub_filename)[1].lstrip('.')
 
-    command = [
+    # launch ffmpeg
+    proc = await asyncio.create_subprocess_exec(
         'ffmpeg', '-hide_banner',
         '-i', vid_path,
         '-i', sub_path,
@@ -76,22 +81,31 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
         '-disposition:s:0', 'default',
         '-c:v', 'copy', '-c:a', 'copy',
         '-c:s', sub_ext,
-        '-y', out_path
-    ]
-
-    proc = await asyncio.create_subprocess_exec(
-        *command,
+        '-y', out_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    await asyncio.wait([
-        asyncio.create_task(read_stderr(start, msg, proc)),
-        asyncio.create_task(proc.wait())
-    ])
+
+    # register job
+    job_id = uuid.uuid4().hex[:8]
+    reader = asyncio.create_task(read_stderr(start, msg, proc))
+    waiter = asyncio.create_task(proc.wait())
+    running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter], 'type': 'soft'}
+
+    # inform user
+    await msg.edit(
+        f"🔄 Soft-mux job started (<code>{job_id}</code>)\n"
+        f"Send <code>/cancel {job_id}</code> to abort",
+        parse_mode=ParseMode.HTML
+    )
+
+    # wait until done or killed
+    await asyncio.wait([reader, waiter])
+    running_jobs.pop(job_id, None)
 
     if proc.returncode == 0:
         await msg.edit(
-            f"✅ Soft‑Mux completed in {round(time.time() - start)}s",
+            f"✅ Soft-Mux `{job_id}` completed in {round(time.time() - start)}s",
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
@@ -99,30 +113,26 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
     else:
         err = await proc.stderr.read()
         await msg.edit(
-            "❌ Error during soft‑muxing!\n\n"
+            "❌ Error during soft-muxing!\n\n"
             f"<pre>{err.decode(errors='ignore')}</pre>",
             parse_mode=ParseMode.HTML
         )
         return False
 
 # ------------------------------------------------------------------------------
-# Hard‑Mux (burn‑in subtitles + re‑encode)
+# Hard-Mux (burn-in subtitles + re-encode)
 # ------------------------------------------------------------------------------
 async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     start = time.time()
-
-    # use chat.id since msg.from_user is None on bot‐sent messages
     user_id = msg.chat.id
     cfg     = SettingsManager.get(user_id)
 
-    # fall back to defaults
+    # build filters
     res    = cfg.get('resolution', '1920:1080')
     fps    = cfg.get('fps',        'original')
     codec  = cfg.get('codec',      'libx264')
     crf    = cfg.get('crf',        '27')
     preset = cfg.get('preset',     'faster')
-
-    # build -vf filters (with absolute path to subtitle)
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
     vf = [f"subtitles={sub_path}"]
@@ -136,7 +146,8 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     output   = f"{base}_hard.mp4"
     out_path = os.path.join(Config.DOWNLOAD_DIR, output)
 
-    command = [
+    # launch ffmpeg
+    proc = await asyncio.create_subprocess_exec(
         'ffmpeg', '-hide_banner',
         '-i', vid_path,
         '-vf', vf_arg,
@@ -146,22 +157,31 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
         '-map', '0:v:0',
         '-map', '0:a:0?',
         '-c:a', 'copy',
-        '-y', out_path
-    ]
-
-    proc = await asyncio.create_subprocess_exec(
-        *command,
+        '-y', out_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
-    await asyncio.wait([
-        asyncio.create_task(read_stderr(start, msg, proc)),
-        asyncio.create_task(proc.wait())
-    ])
+
+    # register job
+    job_id = uuid.uuid4().hex[:8]
+    reader = asyncio.create_task(read_stderr(start, msg, proc))
+    waiter = asyncio.create_task(proc.wait())
+    running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter], 'type': 'hard'}
+
+    # inform user
+    await msg.edit(
+        f"🔄 Hard-mux job started (<code>{job_id}</code>)\n"
+        f"Send <code>/cancel {job_id}</code> to abort",
+        parse_mode=ParseMode.HTML
+    )
+
+    # wait until done or killed
+    await asyncio.wait([reader, waiter])
+    running_jobs.pop(job_id, None)
 
     if proc.returncode == 0:
         await msg.edit(
-            f"✅ Hard‑Mux completed in {round(time.time() - start)}s",
+            f"✅ Hard-Mux `{job_id}` completed in {round(time.time() - start)}s",
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
@@ -169,7 +189,7 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
     else:
         err = await proc.stderr.read()
         await msg.edit(
-            "❌ Error during hard‑muxing!\n\n"
+            "❌ Error during hard-muxing!\n\n"
             f"<pre>{err.decode(errors='ignore')}</pre>",
             parse_mode=ParseMode.HTML
         )
