@@ -1,5 +1,3 @@
-# helper_func/queue.py
-
 import asyncio
 import uuid
 from typing import NamedTuple
