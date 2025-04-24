@@ -64,8 +64,10 @@ async def softmux(client, message):
 
     # cleanup
     for fn in (vid, sub, final):
-        try: os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
-        except: pass
+        try:
+            os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
+        except:
+            pass
     db.erase(chat_id)
 
 
@@ -88,7 +90,7 @@ async def hardmux(client, message):
     sent_msg = await client.send_message(chat_id, '🔄 Starting hard-mux…')
     result   = await hardmux_vid(vid, sub, sent_msg)
     if not result:
-        return
+        return   # hardmux_vid already edited with error
 
     final = db.get_filename(chat_id)
     os.rename(
@@ -110,9 +112,12 @@ async def hardmux(client, message):
         print(e)
         await client.send_message(chat_id, '❌ Upload failed. Check logs.')
 
+    # cleanup
     for fn in (vid, sub, final):
-        try: os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
-        except: pass
+        try:
+            os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
+        except:
+            pass
     db.erase(chat_id)
 
 
@@ -122,6 +127,8 @@ async def hardmux(client, message):
 @Client.on_message(filters.command('cancel') & check_user & filters.private)
 async def cancel_job(client, message):
     chat_id = message.from_user.id
+
+    # expect exactly: /cancel <job_id>
     if len(message.command) != 2:
         return await client.send_message(chat_id, 'Usage: /cancel <job_id>')
 
@@ -130,7 +137,7 @@ async def cancel_job(client, message):
     if not entry:
         return await client.send_message(chat_id, f'No active job `{job_id}` found.')
 
-    # terminate ffmpeg + cancel our progress tasks
+    # terminate ffmpeg + cancel progress‐reader tasks
     entry['proc'].kill()
     for t in entry['tasks']:
         t.cancel()
