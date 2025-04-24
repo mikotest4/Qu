@@ -1,63 +1,74 @@
+# helper_func/progress_bar.py
 
 import time
 import math
 
-async def progress_bar(current, total, text, message, start):
+async def progress_bar(current, total, text, message, start, job_id=None):
+    """
+    Edit `message` to show a progress bar.  
+    If `job_id` is given, it will appear in the header.
+    """
+    now  = time.time()
+    diff = now - start
 
-    now = time.time()
-    diff = now-start
+    # only refresh every ~10s or on completion
     if round(diff % 10) == 0 or current == total:
-        percentage = current*100/total
-        speed = current/diff
-        elapsed_time = round(diff)*1000
-        eta = round((total-current)/speed)*1000
-        ett = eta + elapsed_time
+        percentage = (current * 100) / total if total else 0
+        speed      = current / diff if diff else 0
+        elapsed_ms = round(diff) * 1000
+        eta_ms     = (round((total - current) / speed) * 1000) if speed else 0
+        total_eta  = elapsed_ms + eta_ms
 
-        elapsed_time = TimeFormatter(elapsed_time)
-        ett = TimeFormatter(ett)
+        elapsed_str = TimeFormatter(elapsed_ms)
+        eta_str     = TimeFormatter(total_eta)
 
-        progress = "[{0}{1}] \n\n🔹Progress: {2}%\n".format(
-            ''.join(["◼️" for i in range(math.floor(percentage / 5))]),
-            ''.join(["◻️" for i in range(20 - math.floor(percentage / 5))]),
-            round(percentage, 2))
+        # header with optional job_id
+        if job_id:
+            header = f"🔄 <b>Job {job_id} Progress</b>\n\n"
+        else:
+            header = "🔄 Progress\n\n"
 
-        tmp = progress + "{0} of {1}\n\n️🔹Speed: {2}/s\n\n🔹ETA: {3}\n".format(
-            humanbytes(current),
-            humanbytes(total),
-            humanbytes(speed),
-            # elapsed_time if elapsed_time != '' else "0 s",
-            ett if ett != '' else "0 s"
+        # build the bar
+        filled_length = math.floor(percentage / 5)
+        bar = "[" + "◼️" * filled_length + "◻️" * (20 - filled_length) + "]\n\n"
+        stats = (
+            f"🔹 {round(percentage, 2)}%  "
+            f"({humanbytes(current)}/{humanbytes(total)})\n\n"
+            f"🔹 Speed: {humanbytes(speed)}/s\n"
+            f"🔹 ETA: {eta_str}\n"
         )
 
-        try :
-            await message.edit(
-                text = '{}.\n{}'.format(text, tmp)
-            )
+        try:
+            await message.edit(text=f"{text}\n\n{header}{bar}{stats}")
         except:
             pass
 
+
 def humanbytes(size):
-    # https://stackoverflow.com/a/49361727/4723940
-    # 2**10 = 1024
+    """Convert bytes -> human-readable string."""
     if not size:
-        return ""
+        return "0 B"
     power = 2**10
     n = 0
-    Dic_powerN = {0: ' ', 1: 'Ki', 2: 'Mi', 3: 'Gi', 4: 'Ti'}
-    while size > power:
+    units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+    while size >= power and n < len(units)-1:
         size /= power
         n += 1
-    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
+    return f"{round(size, 2)} {units[n]}"
 
 
 def TimeFormatter(milliseconds: int) -> str:
-    seconds, milliseconds = divmod(int(milliseconds), 1000)
-    minutes, seconds = divmod(seconds, 60)
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-    tmp = ((str(days) + "d, ") if days else "") + \
-        ((str(hours) + "h, ") if hours else "") + \
-        ((str(minutes) + "m, ") if minutes else "") + \
-        ((str(seconds) + "s, ") if seconds else "") + \
-        ((str(milliseconds) + "ms, ") if milliseconds else "")
-    return tmp[:-2]
+    """Convert ms -> 'Xd, Xh, Xm, Xs, Xms'."""
+    seconds, ms = divmod(int(milliseconds), 1000)
+    minutes, sec = divmod(seconds, 60)
+    hours, min_ = divmod(minutes, 60)
+    days, hr   = divmod(hours, 24)
+
+    parts = []
+    if days:   parts.append(f"{days}d")
+    if hr:     parts.append(f"{hr}h")
+    if min_:   parts.append(f"{min_}m")
+    if sec:    parts.append(f"{sec}s")
+    if ms:     parts.append(f"{ms}ms")
+
+    return ", ".join(parts) if parts else "0ms"
