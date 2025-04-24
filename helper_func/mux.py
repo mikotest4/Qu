@@ -35,23 +35,26 @@ async def readlines(stream):
             yield line
         data.extend(await stream.read(1024))
 
-async def read_stderr(start: float, msg, process):
+# ------------------------------------------------------------------------------
+# Read and display ffmpeg progress, including job_id
+# ------------------------------------------------------------------------------
+async def read_stderr(start: float, msg, proc, job_id: str):
     """Read ffmpeg stderr, parse progress, and edit Telegram msg every ~5s."""
-    async for raw in readlines(process.stderr):
+    async for raw in readlines(proc.stderr):
         line = raw.decode('utf-8', errors='ignore')
         prog = parse_progress(line)
         if not prog:
             continue
 
         elapsed = time.time() - start
-        text = (
-            "🔄 <b>Progress</b>\n"
-            f"• Size   : {prog.get('size','N/A')}\n"
-            f"• Time   : {prog.get('time','N/A')}\n"
-            f"• Speed  : {prog.get('speed','N/A')}"
-        )
-
+        # only update roughly every 5 seconds
         if round(elapsed) % 5 == 0:
+            text = (
+                f"🔄 <b>Progress</b> [<code>{job_id}</code>]\n"
+                f"• Size   : {prog.get('size','N/A')}\n"
+                f"• Time   : {prog.get('time','N/A')}\n"
+                f"• Speed  : {prog.get('speed','N/A')}"
+            )
             try:
                 await msg.edit(text, parse_mode=ParseMode.HTML)
             except:
@@ -82,17 +85,20 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
         stderr=asyncio.subprocess.PIPE
     )
 
+    # generate and register job
     job_id = uuid.uuid4().hex[:8]
-    reader = asyncio.create_task(read_stderr(start, msg, proc))
+    reader = asyncio.create_task(read_stderr(start, msg, proc, job_id))
     waiter = asyncio.create_task(proc.wait())
     running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter], 'type': 'soft'}
 
+    # tell user the job ID
     await msg.edit(
-        f"🔄 Soft-mux job started (<code>{job_id}</code>)\n"
+        f"🔄 Soft-Mux job started: <code>{job_id}</code>\n"
         f"Send <code>/cancel {job_id}</code> to abort",
         parse_mode=ParseMode.HTML
     )
 
+    # wait for finish or cancel
     await asyncio.wait([reader, waiter])
     running_jobs.pop(job_id, None)
 
@@ -154,17 +160,20 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
         stderr=asyncio.subprocess.PIPE
     )
 
+    # generate and register job
     job_id = uuid.uuid4().hex[:8]
-    reader = asyncio.create_task(read_stderr(start, msg, proc))
+    reader = asyncio.create_task(read_stderr(start, msg, proc, job_id))
     waiter = asyncio.create_task(proc.wait())
     running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter], 'type': 'hard'}
 
+    # tell user the job ID
     await msg.edit(
-        f"🔄 Hard-mux job started (<code>{job_id}</code>)\n"
+        f"🔄 Hard-Mux job started: <code>{job_id}</code>\n"
         f"Send <code>/cancel {job_id}</code> to abort",
         parse_mode=ParseMode.HTML
     )
 
+    # wait for finish or cancel
     await asyncio.wait([reader, waiter])
     running_jobs.pop(job_id, None)
 
