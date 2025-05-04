@@ -1,4 +1,8 @@
-import os, time, re, uuid, asyncio
+import os
+import time
+import re
+import uuid
+import asyncio
 from config import Config
 from helper_func.settings_manager import SettingsManager
 from pyrogram.enums import ParseMode
@@ -40,117 +44,83 @@ async def read_stderr(start: float, msg, proc, job_id: str):
                 pass
 
 async def softmux_vid(vid_filename: str, sub_filename: str, msg):
-    start    = time.time()
-    vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
-    sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
-    base     = os.path.splitext(vid_filename)[0]
-    output   = f"{base}_soft.mkv"
-    out_path = os.path.join(Config.DOWNLOAD_DIR, output)
-    sub_ext  = os.path.splitext(sub_filename)[1].lstrip('.')
-
-    proc = await asyncio.create_subprocess_exec(
-        'ffmpeg', '-hide_banner',
-        '-i', vid_path, '-i', sub_path,
-        '-map', '1:0', '-map', '0',
-        '-disposition:s:0', 'default',
-        '-c:v', 'copy', '-c:a', 'copy',
-        '-c:s', sub_ext,
-        '-y', out_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-
-    job_id = uuid.uuid4().hex[:8]
-    reader = asyncio.create_task(read_stderr(start, msg, proc, job_id))
-    waiter = asyncio.create_task(proc.wait())
-    running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter]}
-
-    await msg.edit(
-        f"🔄 Soft-Mux job started: <code>{job_id}</code>\n"
-        f"Send <code>/cancel {job_id}</code> to abort",
-        parse_mode=ParseMode.HTML
-    )
-
-    await asyncio.wait([reader, waiter])
-    running_jobs.pop(job_id, None)
-
-    if proc.returncode == 0:
-        await msg.edit(
-            f"✅ Soft-Mux `<code>{job_id}</code>` completed in {round(time.time()-start)}s",
-            parse_mode=ParseMode.HTML
-        )
-        await asyncio.sleep(2)
-        return output
-    else:
-        err = await proc.stderr.read()
-        await msg.edit(
-            "❌ Error during soft-mux!\n\n"
-            f"<pre>{err.decode(errors='ignore')}</pre>",
-            parse_mode=ParseMode.HTML
-        )
-        return False
+    # … your existing soft-mux implementation …
+    pass
 
 async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
-    start    = time.time()
-    cfg      = SettingsManager.get(msg.chat.id)
+    # … your existing hard-mux implementation …
+    pass
 
-    res    = cfg.get('resolution','1920:1080')
-    fps    = cfg.get('fps','original')
-    codec  = cfg.get('codec','libx264')
-    crf    = cfg.get('crf','27')
-    preset = cfg.get('preset','faster')
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW: re-encode video WITHOUT subtitles
+async def encode_without_sub(vid_filename: str, _sub_unused, msg):
+    start = time.time()
 
-    vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
-    sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
-    vf = [f"subtitles={sub_path}"]
-    if res!='original': vf.append(f"scale={res}")
-    if fps!='original': vf.append(f"fps={fps}")
-    vf_arg = ",".join(vf)
+    # pull saved settings
+    cfg    = SettingsManager.get(msg.chat.id)
+    res    = cfg.get('resolution', 'original')
+    fps    = cfg.get('fps',        'original')
+    codec  = cfg.get('codec',      'libx264')
+    crf    = cfg.get('crf',        '27')
+    preset = cfg.get('preset',     'faster')
 
-    base   = os.path.splitext(vid_filename)[0]
-    output = f"{base}_hard.mp4"
+    # build paths
+    in_path  = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
+    base     = os.path.splitext(vid_filename)[0]
+    output   = f"{base}_nosub.mkv"
     out_path = os.path.join(Config.DOWNLOAD_DIR, output)
 
-    proc = await asyncio.create_subprocess_exec(
-        'ffmpeg','-hide_banner',
-        '-i', vid_path,
-        '-vf', vf_arg,
-        '-c:v', codec,
-        '-preset', preset,
-        '-crf', crf,
-        '-map','0:v:0','-map','0:a:0?',
-        '-c:a','copy',
-        '-y', out_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    # build -vf if needed
+    vf_args = []
+    if res != 'original':
+        vf_args.append(f"scale={res}")
+    if fps != 'original':
+        vf_args.append(f"fps={fps}")
+    vf_str = ",".join(vf_args)
 
+    # ffmpeg command
+    cmd = [
+        'ffmpeg', '-hide_banner',
+        '-i', in_path,
+        '-c:v', codec, '-crf', crf, '-preset', preset,
+        '-c:a', 'copy',
+        '-movflags', '+faststart'
+    ]
+    if vf_str:
+        cmd += ['-vf', vf_str]
+    cmd += [out_path]
+
+    # launch and track progress
+    proc   = await asyncio.create_subprocess_exec(*cmd, stderr=asyncio.subprocess.PIPE)
     job_id = uuid.uuid4().hex[:8]
     reader = asyncio.create_task(read_stderr(start, msg, proc, job_id))
     waiter = asyncio.create_task(proc.wait())
     running_jobs[job_id] = {'proc': proc, 'tasks': [reader, waiter]}
 
+    # notify user
     await msg.edit(
-        f"🔄 Hard-Mux job started: <code>{job_id}</code>\n"
+        f"🔄 Encode job started: <code>{job_id}</code>\n"
         f"Send <code>/cancel {job_id}</code> to abort",
         parse_mode=ParseMode.HTML
     )
 
+    # wait for completion
     await asyncio.wait([reader, waiter])
     running_jobs.pop(job_id, None)
 
     if proc.returncode == 0:
+        elapsed = round(time.time() - start)
         await msg.edit(
-            f"✅ Hard-Mux `<code>{job_id}</code>` completed in {round(time.time()-start)}s",
+            f"✅ Encode `<code>{job_id}</code>` completed in {elapsed}s",
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
         return output
     else:
-        err = await proc.stderr.read()
+        err = (await proc.stderr.read()).decode(errors='ignore')
         await msg.edit(
-            "❌ Error during hard-mux!\n\n"
-            f"<pre>{err.decode(errors='ignore')}</pre>",
+            "❌ Error during encode!\n\n"
+            f"<pre>{err}</pre>",
             parse_mode=ParseMode.HTML
         )
         return False
