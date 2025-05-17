@@ -1,18 +1,21 @@
-# Use the official Python 3.9 slim image
 FROM python:3.9-slim
 
-# Update apt-get and install ffmpeg (and optionally python3-pip if needed)
-RUN apt-get update && apt-get install -y ffmpeg
+# 1) install ffmpeg + fontconfig
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ffmpeg \
+      fontconfig && \
+    rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
+# 2) copy & register your custom fonts
+COPY fonts/ /usr/local/share/fonts/
+RUN fc-cache -fv
+
+# 3) bring in the app
 WORKDIR /app
-
-# Copy all files from your local folder into the container
 COPY . /app
 
-# Install Python dependencies
-# (pip is usually included in the official Python image, so pip3 is available)
+# 4) install Python deps
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Start your bot
 CMD ["python3", "muxbot.py"]
