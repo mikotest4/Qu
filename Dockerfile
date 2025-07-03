@@ -7,7 +7,7 @@ RUN apt-get update && \
       fontconfig && \
     rm -rf /var/lib/apt/lists/*
 
-# 2) copy & register your custom fonts
+# 2) copy & register your custom fonts (optional - subtitle fonts take precedence now)
 COPY fonts/ /usr/local/share/fonts/
 RUN fc-cache -fv
 
