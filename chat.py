@@ -1,6 +1,6 @@
 class Chat:
 
-    START_TEXT = """👋 <b>Hlow there!</b>  
+    START_TEXT = """👋 <b>Hello there!</b>  
 📌 <b>This is a Telegram Bot to Mux Subtitles into a Video.</b>  
 
 🎬 <b>How to Use:</b>  
@@ -24,7 +24,7 @@ To set a custom name, send it along with the URL separated by <code>|</code>.
 Example: <i>url|custom_name.mp4</i>  
 
 ⚠️ <b>Note:</b>  
-<i>Hardmux only supports English fonts. Other scripts may appear as empty blocks in the video!</i>  
+<i>Both hardmux and softmux will preserve the original fonts from your subtitle files!</i>  
 
 🤖 <b>For Donghua watching, Visit:</b> <a href="https://fackyhindidonghuas.in/">Facky Hindi Donghua</a>  
 
