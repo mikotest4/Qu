@@ -1,4 +1,3 @@
-# helper_func/queue.py
 
 import asyncio
 import uuid
@@ -11,7 +10,8 @@ class Job(NamedTuple):
     chat_id: int
     vid: str            # input video filename
     sub: str            # input subtitle filename
+    font: str           # input font filename
     final_name: str     # the filename to rename→upload
-    status_msg: Message # the message we’ll keep editing for progress
+    status_msg: Message # the message we'll keep editing for progress
 
 job_queue: asyncio.Queue[Job] = asyncio.Queue()
