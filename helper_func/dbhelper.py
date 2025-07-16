@@ -1,11 +1,14 @@
 import sqlite3
+import os
 
 class Database:
 
     def __init__(self):
-        self.conn = sqlite3.connect('muxdb.sqlite', check_same_thread = False)
+        self.conn = sqlite3.connect('muxdb.sqlite', check_same_thread=False)
 
     def setup(self):
+        # Drop old table and create new one with correct schema
+        self.conn.execute("DROP TABLE IF EXISTS muxbot;")
         cmd = """CREATE TABLE IF NOT EXISTS muxbot(
         user_id INT,
         vid_name TEXT,
