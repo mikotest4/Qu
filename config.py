@@ -3,7 +3,7 @@ import os
 
 class Config:
 
-    BOT_TOKEN = "7540338860:AAHt9frdIvXj7ggjDlvd1Za8HQWMqN4JZzM"
+    BOT_TOKEN = "7819249411:AAGzpjJTyVp3Mxu3Px4i1Huk1T5B4daG5hQ"
     APP_ID = "27704224"
     API_HASH = "c2e33826d757fe113bc154fcfabc987d"
 
