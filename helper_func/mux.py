@@ -1,4 +1,4 @@
-import os, time, re, uuid, asyncio
+import os, time, re, uuid, asyncio, shutil
 from config import Config
 from helper_func.settings_manager import SettingsManager
 from pyrogram.enums import ParseMode
@@ -51,12 +51,15 @@ async def softmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
 
     proc = await asyncio.create_subprocess_exec(
         'ffmpeg', '-hide_banner',
-        '-i', vid_path, '-i', sub_path, '-i', font_path,
-        '-map', '1:0', '-map', '0', '-map', '2:0',
+        '-i', vid_path, 
+        '-i', sub_path, 
+        '-attach', font_path,
+        '-map', '0', '-map', '1:0',
         '-disposition:s:0', 'default',
         '-c:v', 'copy', '-c:a', 'copy',
-        '-c:s', sub_ext, '-c:t', 'copy',
+        '-c:s', sub_ext,
         '-metadata:s:t:0', f'filename={font_filename}',
+        '-metadata:s:t:0', 'mimetype=application/x-truetype-font',
         '-y', out_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
@@ -106,8 +109,16 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
     font_path = os.path.join(Config.DOWNLOAD_DIR, font_filename)
     
-    # Use custom font in subtitles filter
-    vf = [f"subtitles={sub_path}:fontsdir={os.path.dirname(font_path)}"]
+    # Create fonts directory and copy font there
+    fonts_dir = os.path.join(Config.DOWNLOAD_DIR, 'fonts')
+    os.makedirs(fonts_dir, exist_ok=True)
+    
+    # Copy font to fonts directory
+    font_dest = os.path.join(fonts_dir, font_filename)
+    shutil.copy2(font_path, font_dest)
+    
+    # Use custom font in subtitles filter with proper font path
+    vf = [f"subtitles={sub_path}:fontsdir={fonts_dir}"]
     if res != 'original': vf.append(f"scale={res}")
     if fps != 'original': vf.append(f"fps={fps}")
     vf_arg = ",".join(vf)
@@ -150,6 +161,13 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
+        
+        # Clean up fonts directory
+        try:
+            shutil.rmtree(fonts_dir)
+        except:
+            pass
+            
         return output
     else:
         err = await proc.stderr.read()
@@ -158,4 +176,11 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
             f"<pre>{err.decode(errors='ignore')}</pre>",
             parse_mode=ParseMode.HTML
         )
+        
+        # Clean up fonts directory on error
+        try:
+            shutil.rmtree(fonts_dir)
+        except:
+            pass
+            
         return False
