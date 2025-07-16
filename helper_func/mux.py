@@ -109,33 +109,41 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
     font_path = os.path.join(Config.DOWNLOAD_DIR, font_filename)
     
+    # Create fonts directory and copy font there
+    fonts_dir = os.path.join(Config.DOWNLOAD_DIR, 'fonts')
+    os.makedirs(fonts_dir, exist_ok=True)
+    
+    # Copy font to fonts directory with original name
+    font_dest = os.path.join(fonts_dir, font_filename)
+    shutil.copy2(font_path, font_dest)
+    
     # Get absolute paths
     vid_path = os.path.abspath(vid_path)
     sub_path = os.path.abspath(sub_path)
-    font_path = os.path.abspath(font_path)
+    fonts_dir = os.path.abspath(fonts_dir)
     
     # Escape special characters in paths for FFmpeg
     sub_path_escaped = sub_path.replace('\\', '\\\\').replace(':', '\\:')
-    font_path_escaped = font_path.replace('\\', '\\\\').replace(':', '\\:')
+    fonts_dir_escaped = fonts_dir.replace('\\', '\\\\').replace(':', '\\:')
     
-    # Method 1: Try with direct font specification in subtitles filter
+    # Extract actual font name from filename (without extension and timestamp)
+    # Try to get original font name from database if available
+    from helper_func.dbhelper import Database as Db
+    db = Db()
+    original_filename = db.get_filename(msg.chat.id) if hasattr(msg, 'chat') else None
+    
+    # For now, use the filename without extension as font name
+    font_name_without_ext = os.path.splitext(font_filename)[0]
+    
+    # Build video filter based on subtitle format
     vf_parts = []
     
-    # Check subtitle format and use appropriate filter
     sub_ext = os.path.splitext(sub_filename)[1].lower()
     if sub_ext == '.ass':
-        # For ASS files, try to force font
-        vf_parts.append(f"subtitles={sub_path_escaped}:force_style='FontName={os.path.splitext(font_filename)[0]}'")
+        # For ASS files, force the font style
+        vf_parts.append(f"subtitles={sub_path_escaped}:fontsdir={fonts_dir_escaped}")
     else:
         # For SRT files, use subtitles filter with font directory
-        fonts_dir = os.path.join(Config.DOWNLOAD_DIR, 'fonts')
-        os.makedirs(fonts_dir, exist_ok=True)
-        
-        # Copy font to fonts directory
-        font_dest = os.path.join(fonts_dir, font_filename)
-        shutil.copy2(font_path, font_dest)
-        
-        fonts_dir_escaped = fonts_dir.replace('\\', '\\\\').replace(':', '\\:')
         vf_parts.append(f"subtitles={sub_path_escaped}:fontsdir={fonts_dir_escaped}")
     
     # Add scaling and fps if needed
@@ -165,6 +173,9 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
     
     # Debug: Print the command
     print(f"FFmpeg command: {' '.join(cmd)}")
+    print(f"Font file: {font_filename}")
+    print(f"Fonts directory: {fonts_dir}")
+    print(f"Font files in directory: {os.listdir(fonts_dir) if os.path.exists(fonts_dir) else 'None'}")
     
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -197,7 +208,6 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
         
         # Clean up fonts directory
         try:
-            fonts_dir = os.path.join(Config.DOWNLOAD_DIR, 'fonts')
             if os.path.exists(fonts_dir):
                 shutil.rmtree(fonts_dir)
         except:
@@ -206,15 +216,17 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, 
         return output
     else:
         err = await proc.stderr.read()
+        stderr_text = err.decode(errors='ignore')
+        print(f"FFmpeg stderr: {stderr_text}")
+        
         await msg.edit(
             "❌ Error during hard-mux!\n\n"
-            f"<pre>{err.decode(errors='ignore')}</pre>",
+            f"<pre>{stderr_text}</pre>",
             parse_mode=ParseMode.HTML
         )
         
         # Clean up fonts directory on error
         try:
-            fonts_dir = os.path.join(Config.DOWNLOAD_DIR, 'fonts')
             if os.path.exists(fonts_dir):
                 shutil.rmtree(fonts_dir)
         except:
