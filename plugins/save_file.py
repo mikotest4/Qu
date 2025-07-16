@@ -67,13 +67,13 @@ async def save_doc(client, message):
     else:
         save_filename = tg_filename
 
-    ext = save_filename.split('.').pop()
+    ext = save_filename.split('.').pop().lower()
     filename = str(round(start_time))+'.'+ext
 
     if ext in ['srt', 'ass']:
         os.rename(Config.DOWNLOAD_DIR+'/'+tg_filename, Config.DOWNLOAD_DIR+'/'+filename)
         db.put_sub(chat_id, filename)
-        
+
         if db.check_video(chat_id) and db.check_font(chat_id):
             text = 'Subtitle file downloaded successfully.\nChoose your desired muxing!\n[ /softmux , /hardmux ]'
         elif db.check_video(chat_id):
@@ -89,8 +89,8 @@ async def save_doc(client, message):
 
     elif ext in ['ttf', 'otf']:
         os.rename(Config.DOWNLOAD_DIR+'/'+tg_filename, Config.DOWNLOAD_DIR+'/'+filename)
-        db.put_font(chat_id, filename)
-        
+        db.put_font(chat_id, filename, og_filename)  # Updated line
+
         if db.check_video(chat_id) and db.check_sub(chat_id):
             text = 'Font file downloaded successfully.\nChoose your desired muxing!\n[ /softmux , /hardmux ]'
         elif db.check_video(chat_id):
@@ -107,7 +107,7 @@ async def save_doc(client, message):
     elif ext in ['mp4', 'mkv']:
         os.rename(Config.DOWNLOAD_DIR+'/'+tg_filename, Config.DOWNLOAD_DIR+'/'+filename)
         db.put_video(chat_id, filename, save_filename)
-        
+
         if db.check_sub(chat_id) and db.check_font(chat_id):
             text = 'Video file downloaded successfully.\nChoose your desired muxing.\n[ /softmux , /hardmux ]'
         elif db.check_sub(chat_id):
@@ -164,18 +164,18 @@ async def save_video(client, message):
         og_filename = message.document.filename
     except:
         og_filename = False
-    
+
     if og_filename:
         save_filename = og_filename
     else:
         save_filename = tg_filename
-    
-    ext = save_filename.split('.').pop()
+
+    ext = save_filename.split('.').pop().lower()
     filename = str(round(start_time))+'.'+ext
     os.rename(Config.DOWNLOAD_DIR+'/'+tg_filename, Config.DOWNLOAD_DIR+'/'+filename)
-    
+
     db.put_video(chat_id, filename, save_filename)
-    
+
     if db.check_sub(chat_id) and db.check_font(chat_id):
         text = 'Video file downloaded successfully.\nChoose your desired muxing.\n[ /softmux , /hardmux ]'
     elif db.check_sub(chat_id):
@@ -223,7 +223,7 @@ async def save_url(client, message):
             save_filename = unquote(save_filename)
 
     sent_msg = await client.send_message(chat_id, 'Preparing Your Download')
-    ext = save_filename.split('.')[-1]
+    ext = save_filename.split('.')[-1].lower()
     if ext not in ['mp4', 'mkv']:
         return await sent_msg.edit(Chat.UNSUPPORTED_FORMAT.format(ext))
 
@@ -263,14 +263,14 @@ async def save_url(client, message):
         pass
 
     db.put_video(chat_id, filename, save_filename)
-    
+
     if db.check_sub(chat_id) and db.check_font(chat_id):
         text = 'Video File Downloaded.\nChoose your desired muxing\n[ /softmux , /hardmux ]'
     elif db.check_sub(chat_id):
         text = 'Video File Downloaded.\nNow send Font file (.ttf or .otf)!'
     else:
         text = 'Video File Downloaded.\nNow send Subtitle file!'
-    
+
     try:
         await sent_msg.edit(text)
     except:
