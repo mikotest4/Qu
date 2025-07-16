@@ -14,16 +14,17 @@ class Database:
         vid_name TEXT,
         sub_name TEXT,
         font_name TEXT,
-        filename TEXT
+        filename TEXT,
+        original_font_name TEXT
         );"""
         self.conn.execute(cmd)
         self.conn.commit()
 
     def put_video(self, user_id, vid_name, filename):
-        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?);'
+        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?,?);'
         srch_cmd = f'SELECT * FROM muxbot WHERE user_id={user_id};'
         up_cmd = f'UPDATE muxbot SET vid_name="{vid_name}", filename="{filename}" WHERE user_id={user_id};'
-        data = (user_id, vid_name, None, None, filename)
+        data = (user_id, vid_name, None, None, filename, None)
         res = self.conn.execute(srch_cmd).fetchone()
         if res:
             self.conn.execute(up_cmd)
@@ -33,10 +34,10 @@ class Database:
             self.conn.commit()
 
     def put_sub(self, user_id, sub_name):
-        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?);'
+        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?,?);'
         srch_cmd = f'SELECT * FROM muxbot WHERE user_id={user_id};'
         up_cmd = f'UPDATE muxbot SET sub_name="{sub_name}" WHERE user_id={user_id};'
-        data = (user_id, None, sub_name, None, None)
+        data = (user_id, None, sub_name, None, None, None)
         res = self.conn.execute(srch_cmd).fetchone()
         if res:
             self.conn.execute(up_cmd)
@@ -45,11 +46,11 @@ class Database:
             self.conn.execute(ins_cmd, data)
             self.conn.commit()
 
-    def put_font(self, user_id, font_name):
-        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?);'
+    def put_font(self, user_id, font_name, original_font_name=None):
+        ins_cmd = 'INSERT INTO muxbot VALUES (?,?,?,?,?,?);'
         srch_cmd = f'SELECT * FROM muxbot WHERE user_id={user_id};'
-        up_cmd = f'UPDATE muxbot SET font_name="{font_name}" WHERE user_id={user_id};'
-        data = (user_id, None, None, font_name, None)
+        up_cmd = f'UPDATE muxbot SET font_name="{font_name}", original_font_name="{original_font_name}" WHERE user_id={user_id};'
+        data = (user_id, None, None, font_name, None, original_font_name)
         res = self.conn.execute(srch_cmd).fetchone()
         if res:
             self.conn.execute(up_cmd)
@@ -115,6 +116,14 @@ class Database:
         res = self.conn.execute(cmd).fetchone()
         if res:
             return res[3]
+        else:
+            return False
+
+    def get_original_font_name(self, user_id):
+        cmd = f'SELECT * FROM muxbot WHERE user_id={user_id};'
+        res = self.conn.execute(cmd).fetchone()
+        if res and len(res) > 5:
+            return res[5]
         else:
             return False
 
