@@ -3,9 +3,9 @@
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
 from helper_func.queue import Job, job_queue
-from helper_func.mux   import softmux_vid, hardmux_vid, running_jobs
+from helper_func.mux import softmux_vid, hardmux_vid, running_jobs
 from helper_func.progress_bar import progress_bar
-from helper_func.dbhelper       import Database as Db
+from helper_func.dbhelper import Database as Db
 from config import Config
 import uuid, time, os, asyncio
 
@@ -16,34 +16,35 @@ async def _check_user(filt, client, message):
     return str(message.from_user.id) in Config.ALLOWED_USERS
 check_user = filters.create(_check_user)
 
-
 # ------------------------------------------------------------------------------
 # enqueue a soft-mux job
 # ------------------------------------------------------------------------------
 @Client.on_message(filters.command('softmux') & check_user & filters.private)
 async def enqueue_soft(client, message):
     chat_id = message.from_user.id
-    vid     = db.get_vid_filename(chat_id)
-    sub     = db.get_sub_filename(chat_id)
-    if not vid or not sub:
+    vid = db.get_vid_filename(chat_id)
+    sub = db.get_sub_filename(chat_id)
+    font = db.get_font_filename(chat_id)
+    
+    if not vid or not sub or not font:
         text = ''
         if not vid: text += 'First send a Video File\n'
-        if not sub: text += 'Send a Subtitle File!'
+        if not sub: text += 'Send a Subtitle File\n'
+        if not font: text += 'Send a Font File (.ttf or .otf)!'
         return await client.send_message(chat_id, text, parse_mode=ParseMode.HTML)
 
     # capture everything now
     final_name = db.get_filename(chat_id)
-    job_id     = uuid.uuid4().hex[:8]
-    status     = await client.send_message(
+    job_id = uuid.uuid4().hex[:8]
+    status = await client.send_message(
         chat_id,
         f"🔄 Job <code>{job_id}</code> enqueued at position {job_queue.qsize() + 1}",
         parse_mode=ParseMode.HTML
     )
 
     # enqueue & clear DB so user can queue again immediately
-    await job_queue.put(Job(job_id, 'soft', chat_id, vid, sub, final_name, status))
+    await job_queue.put(Job(job_id, 'soft', chat_id, vid, sub, font, final_name, status))
     db.erase(chat_id)
-
 
 # ------------------------------------------------------------------------------
 # enqueue a hard-mux job
@@ -51,25 +52,27 @@ async def enqueue_soft(client, message):
 @Client.on_message(filters.command('hardmux') & check_user & filters.private)
 async def enqueue_hard(client, message):
     chat_id = message.from_user.id
-    vid     = db.get_vid_filename(chat_id)
-    sub     = db.get_sub_filename(chat_id)
-    if not vid or not sub:
+    vid = db.get_vid_filename(chat_id)
+    sub = db.get_sub_filename(chat_id)
+    font = db.get_font_filename(chat_id)
+    
+    if not vid or not sub or not font:
         text = ''
         if not vid: text += 'First send a Video File\n'
-        if not sub: text += 'Send a Subtitle File!'
+        if not sub: text += 'Send a Subtitle File\n'
+        if not font: text += 'Send a Font File (.ttf or .otf)!'
         return await client.send_message(chat_id, text, parse_mode=ParseMode.HTML)
 
     final_name = db.get_filename(chat_id)
-    job_id     = uuid.uuid4().hex[:8]
-    status     = await client.send_message(
+    job_id = uuid.uuid4().hex[:8]
+    status = await client.send_message(
         chat_id,
         f"🔄 Job <code>{job_id}</code> enqueued at position {job_queue.qsize() + 1}",
         parse_mode=ParseMode.HTML
     )
 
-    await job_queue.put(Job(job_id, 'hard', chat_id, vid, sub, final_name, status))
+    await job_queue.put(Job(job_id, 'hard', chat_id, vid, sub, font, final_name, status))
     db.erase(chat_id)
-
 
 # ------------------------------------------------------------------------------
 # cancel a single job (pending or running)
@@ -84,7 +87,7 @@ async def cancel_job(client, message):
 
     # try removing from pending queue first
     removed = False
-    temp_q  = asyncio.Queue()
+    temp_q = asyncio.Queue()
     while not job_queue.empty():
         job = await job_queue.get()
         if job.job_id == target:
@@ -107,7 +110,7 @@ async def cancel_job(client, message):
     entry = running_jobs.get(target)
     if not entry:
         return await message.reply_text(
-            f"No job `<code>{target}</code>` found.", parse_mode=ParseMode.HTML
+            f"No job <code>{target}</code> found.", parse_mode=ParseMode.HTML
         )
 
     entry['proc'].kill()
@@ -116,9 +119,8 @@ async def cancel_job(client, message):
     running_jobs.pop(target, None)
 
     await message.reply_text(
-        f"🛑 Job `<code>{target}</code>` aborted.", parse_mode=ParseMode.HTML
+        f"🛑 Job <code>{target}</code> aborted.", parse_mode=ParseMode.HTML
     )
-
 
 # ------------------------------------------------------------------------------
 # worker: processes exactly one job at a time
@@ -135,7 +137,7 @@ async def queue_worker(client: Client):
         # run ffmpeg (this will itself show live progress including job_id)
         out_file = await (
             softmux_vid if job.mode == 'soft' else hardmux_vid
-        )(job.vid, job.sub, job.status_msg)
+        )(job.vid, job.sub, job.font, job.status_msg)
 
         if out_file:
             # rename to the captured final_name
@@ -168,7 +170,7 @@ async def queue_worker(client: Client):
             )
 
             # cleanup disk
-            for fn in (job.vid, job.sub, job.final_name):
+            for fn in (job.vid, job.sub, job.font, job.final_name):
                 try:
                     os.remove(os.path.join(Config.DOWNLOAD_DIR, fn))
                 except:
