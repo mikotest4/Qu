@@ -39,22 +39,24 @@ async def read_stderr(start: float, msg, proc, job_id: str):
             except:
                 pass
 
-async def softmux_vid(vid_filename: str, sub_filename: str, msg):
-    start    = time.time()
+async def softmux_vid(vid_filename: str, sub_filename: str, font_filename: str, msg):
+    start = time.time()
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
-    base     = os.path.splitext(vid_filename)[0]
-    output   = f"{base}_soft.mkv"
+    font_path = os.path.join(Config.DOWNLOAD_DIR, font_filename)
+    base = os.path.splitext(vid_filename)[0]
+    output = f"{base}_soft.mkv"
     out_path = os.path.join(Config.DOWNLOAD_DIR, output)
-    sub_ext  = os.path.splitext(sub_filename)[1].lstrip('.')
+    sub_ext = os.path.splitext(sub_filename)[1].lstrip('.')
 
     proc = await asyncio.create_subprocess_exec(
         'ffmpeg', '-hide_banner',
-        '-i', vid_path, '-i', sub_path,
-        '-map', '1:0', '-map', '0',
+        '-i', vid_path, '-i', sub_path, '-i', font_path,
+        '-map', '1:0', '-map', '0', '-map', '2:0',
         '-disposition:s:0', 'default',
         '-c:v', 'copy', '-c:a', 'copy',
-        '-c:s', sub_ext,
+        '-c:s', sub_ext, '-c:t', 'copy',
+        '-metadata:s:t:0', f'filename={font_filename}',
         '-y', out_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
@@ -76,7 +78,7 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
 
     if proc.returncode == 0:
         await msg.edit(
-            f"✅ Soft-Mux `<code>{job_id}</code>` completed in {round(time.time()-start)}s",
+            f"✅ Soft-Mux <code>{job_id}</code> completed in {round(time.time()-start)}s",
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
@@ -90,38 +92,39 @@ async def softmux_vid(vid_filename: str, sub_filename: str, msg):
         )
         return False
 
-async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
-    start    = time.time()
-    cfg      = SettingsManager.get(msg.chat.id)
+async def hardmux_vid(vid_filename: str, sub_filename: str, font_filename: str, msg):
+    start = time.time()
+    cfg = SettingsManager.get(msg.chat.id)
 
-    res    = cfg.get('resolution','1920:1080')
-    fps    = cfg.get('fps','original')
-    codec  = cfg.get('codec','libx264')
-    crf    = cfg.get('crf','27')
-    preset = cfg.get('preset','faster')
+    res = cfg.get('resolution', '1920:1080')
+    fps = cfg.get('fps', 'original')
+    codec = cfg.get('codec', 'libx264')
+    crf = cfg.get('crf', '27')
+    preset = cfg.get('preset', 'faster')
 
     vid_path = os.path.join(Config.DOWNLOAD_DIR, vid_filename)
     sub_path = os.path.join(Config.DOWNLOAD_DIR, sub_filename)
+    font_path = os.path.join(Config.DOWNLOAD_DIR, font_filename)
     
-    # Modified: Remove fontsdir parameter to preserve original subtitle fonts
-    vf = [f"subtitles={sub_path}"]
-    if res!='original': vf.append(f"scale={res}")
-    if fps!='original': vf.append(f"fps={fps}")
+    # Use custom font in subtitles filter
+    vf = [f"subtitles={sub_path}:fontsdir={os.path.dirname(font_path)}"]
+    if res != 'original': vf.append(f"scale={res}")
+    if fps != 'original': vf.append(f"fps={fps}")
     vf_arg = ",".join(vf)
 
-    base   = os.path.splitext(vid_filename)[0]
+    base = os.path.splitext(vid_filename)[0]
     output = f"{base}_hard.mp4"
     out_path = os.path.join(Config.DOWNLOAD_DIR, output)
 
     proc = await asyncio.create_subprocess_exec(
-        'ffmpeg','-hide_banner',
+        'ffmpeg', '-hide_banner',
         '-i', vid_path,
         '-vf', vf_arg,
         '-c:v', codec,
         '-preset', preset,
         '-crf', crf,
-        '-map','0:v:0','-map','0:a:0?',
-        '-c:a','copy',
+        '-map', '0:v:0', '-map', '0:a:0?',
+        '-c:a', 'copy',
         '-y', out_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
@@ -143,7 +146,7 @@ async def hardmux_vid(vid_filename: str, sub_filename: str, msg):
 
     if proc.returncode == 0:
         await msg.edit(
-            f"✅ Hard-Mux `<code>{job_id}</code>` completed in {round(time.time()-start)}s",
+            f"✅ Hard-Mux <code>{job_id}</code> completed in {round(time.time()-start)}s",
             parse_mode=ParseMode.HTML
         )
         await asyncio.sleep(2)
